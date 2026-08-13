@@ -24,6 +24,29 @@ load_dotenv()
 
 
 # ==========================================
+# Runtime Trace Helpers
+# ==========================================
+
+def _trace_start(name: str) -> None:
+    print(f"[START] {name}", flush=True)
+
+
+def _trace_done(name: str, detail: str = "") -> None:
+    suffix = f" — {detail}" if detail else ""
+    print(f"[DONE] {name}{suffix}", flush=True)
+
+
+def _trace_wait(name: str, detail: str = "") -> None:
+    suffix = f" — {detail}" if detail else ""
+    print(f"[WAIT] {name}{suffix}", flush=True)
+
+
+def _trace_error(name: str, detail: str = "") -> None:
+    suffix = f" — {detail}" if detail else ""
+    print(f"[ERROR] {name}{suffix}", flush=True)
+
+
+# ==========================================
 # 1. Constants
 # ==========================================
 
@@ -195,6 +218,8 @@ def input_guard_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Input Guard")
+
     cv_text = str(
         state.get("cv_text", "")
     ).strip()
@@ -235,12 +260,18 @@ def input_guard_node(
         )
 
     if errors:
+        _trace_error(
+            "Input Guard",
+            " ".join(errors),
+        )
         return {
             "error_message": " ".join(errors),
             "execution_logs": [
                 "[Input Guard] Input validation failed"
             ],
         }
+
+    _trace_done("Input Guard")
 
     return {
         "cv_text": cv_text,
@@ -284,6 +315,11 @@ def parallel_start_node(
     independently after this node.
     """
 
+    _trace_done(
+        "Workflow Fan-Out",
+        "Profile Analyzer + Job Scout",
+    )
+
     return {
         "execution_logs": [
             (
@@ -302,9 +338,19 @@ def profile_analyzer_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Profile Analyzer")
+
     result = profile_analyzer_agent(
         state
     )
+
+    if result.get("profile_error"):
+        _trace_error(
+            "Profile Analyzer",
+            result["profile_error"],
+        )
+    else:
+        _trace_done("Profile Analyzer")
 
     return {
         **result,
@@ -323,9 +369,22 @@ def job_scout_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Job Scout")
+
     result = job_scout_agent(
         state
     )
+
+    if result.get("job_scout_error"):
+        _trace_error(
+            "Job Scout",
+            result["job_scout_error"],
+        )
+    else:
+        _trace_done(
+            "Job Scout",
+            f"{len(result.get('jobs', []))} raw results",
+        )
 
     return {
         **result,
@@ -494,6 +553,8 @@ def job_validation_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Job Validation")
+
     jobs = state.get(
         "jobs",
         [],
@@ -569,6 +630,11 @@ def job_validation_node(
         :MAX_DISPLAYED_JOBS
     ]
 
+    _trace_done(
+        "Job Validation",
+        f"{len(valid_jobs)} valid jobs",
+    )
+
     return {
         "jobs": valid_jobs,
 
@@ -625,6 +691,8 @@ def refine_search_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Search Refinement")
+
     current = state.get(
         "search_retries",
         0,
@@ -632,6 +700,11 @@ def refine_search_node(
 
     new_count = (
         current + 1
+    )
+
+    _trace_done(
+        "Search Refinement",
+        f"retry {new_count}/{MAX_SEARCH_RETRIES}",
     )
 
     return {
@@ -656,6 +729,8 @@ def profile_ready_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_done("Profile Branch", "approved")
+
     return {
         "profile_ready": True,
 
@@ -668,6 +743,8 @@ def profile_ready_node(
 def jobs_ready_node(
     state: SkillGapState,
 ) -> dict:
+
+    _trace_done("Job Search Branch", "enough jobs")
 
     return {
         "jobs_ready": True,
@@ -682,6 +759,8 @@ def jobs_ready_node(
 def limited_jobs_ready_node(
     state: SkillGapState,
 ) -> dict:
+
+    _trace_done("Job Search Branch", "limited results")
 
     return {
         "jobs_ready": True,
@@ -708,6 +787,8 @@ def jobs_branch_done_node(
     This preserves the existing value of limited_results.
     """
 
+    _trace_done("Job Search Branch", "completed")
+
     return {
         "execution_logs": [
             "[Workflow] Job-search branch completed"
@@ -722,6 +803,11 @@ def jobs_branch_done_node(
 def human_job_selection_node(
     state: SkillGapState,
 ) -> dict:
+
+    _trace_wait(
+        "Human Job Selection",
+        "waiting for user choice",
+    )
 
     jobs = state.get(
         "jobs",
@@ -824,6 +910,11 @@ def human_job_selection_node(
         selected_index
     ]
 
+    _trace_done(
+        "Human Job Selection",
+        f"job #{selected_number}",
+    )
+
     return {
         "selected_job_index":
             selected_index,
@@ -878,6 +969,8 @@ def selected_job_enrichment_node(
     search snippet instead of fabricating data.
     """
 
+    _trace_start("Selected Job Enrichment")
+
     selected_job = dict(
         state.get(
             "selected_job",
@@ -900,6 +993,10 @@ def selected_job_enrichment_node(
     ).strip()
 
     if not url:
+        _trace_done(
+            "Selected Job Enrichment",
+            "no URL; using search snippet",
+        )
         return {
             "selected_job":
                 selected_job,
@@ -920,6 +1017,10 @@ def selected_job_enrichment_node(
     )
 
     if not api_key:
+        _trace_done(
+            "Selected Job Enrichment",
+            "no Tavily key; using search snippet",
+        )
         return {
             "selected_job":
                 selected_job,
@@ -965,6 +1066,11 @@ def selected_job_enrichment_node(
                 "description"
             ] = extracted_text
 
+            _trace_done(
+                "Selected Job Enrichment",
+                "full content extracted",
+            )
+
             return {
                 "selected_job":
                     selected_job,
@@ -981,6 +1087,10 @@ def selected_job_enrichment_node(
             }
 
     except Exception as error:
+        _trace_error(
+            "Selected Job Enrichment",
+            type(error).__name__,
+        )
         return {
             "selected_job":
                 selected_job,
@@ -996,6 +1106,11 @@ def selected_job_enrichment_node(
                 )
             ],
         }
+
+    _trace_done(
+        "Selected Job Enrichment",
+        "using search snippet",
+    )
 
     return {
         "selected_job":
@@ -1021,10 +1136,20 @@ def requirements_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Requirements Agent")
+
     result = requirements_agent(
         state,
         llm,
     )
+
+    if result.get("requirements_error"):
+        _trace_error(
+            "Requirements Agent",
+            result["requirements_error"],
+        )
+    else:
+        _trace_done("Requirements Agent")
 
     return {
         **result,
@@ -1045,6 +1170,8 @@ def requirements_node(
 def gap_analyzer_node(
     state: SkillGapState,
 ) -> dict:
+
+    _trace_start("Gap Analyzer")
 
     result = gap_analyzer(
         state
@@ -1071,6 +1198,17 @@ def gap_analyzer_node(
             f" — Skill Coverage = {coverage}%"
         )
 
+    if result.get("gap_error"):
+        _trace_error(
+            "Gap Analyzer",
+            result["gap_error"],
+        )
+    else:
+        _trace_done(
+            "Gap Analyzer",
+            f"Skill Coverage = {coverage}%",
+        )
+
     return {
         **result,
 
@@ -1088,12 +1226,22 @@ def career_coach_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Career Coach")
+
     result = (
         career_coach_agent
         .generate_recommendations(
             state
         )
     )
+
+    if result.get("career_coach_error"):
+        _trace_error(
+            "Career Coach",
+            result["career_coach_error"],
+        )
+    else:
+        _trace_done("Career Coach")
 
     return {
         **result,
@@ -1115,6 +1263,15 @@ def supervisor_node(
     state: SkillGapState,
 ) -> dict:
 
+    stage = state.get(
+        "review_stage",
+        "unknown",
+    )
+
+    _trace_start(
+        f"Supervisor [{stage}]"
+    )
+
     result = (
         supervisor_agent.review(
             state
@@ -1126,10 +1283,16 @@ def supervisor_node(
         "controlled_failure",
     )
 
-    stage = state.get(
-        "review_stage",
-        "unknown",
-    )
+    if result.get("supervisor_error"):
+        _trace_error(
+            f"Supervisor [{stage}]",
+            result["supervisor_error"],
+        )
+    else:
+        _trace_done(
+            f"Supervisor [{stage}]",
+            decision,
+        )
 
     return {
         **result,
@@ -1238,12 +1401,21 @@ def profile_retry_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Profile Retry")
+
+    _trace_start("Profile Repair")
+
     count = (
         state.get(
             "profile_retry_count",
             0,
         )
         + 1
+    )
+
+    _trace_done(
+        "Profile Retry",
+        f"{count}/{MAX_PROFILE_RETRIES}",
     )
 
     return {
@@ -1263,12 +1435,19 @@ def requirements_retry_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Requirements Retry")
+
     count = (
         state.get(
             "requirements_retry_count",
             0,
         )
         + 1
+    )
+
+    _trace_done(
+        "Requirements Retry",
+        f"{count}/{MAX_REQUIREMENTS_RETRIES}",
     )
 
     return {
@@ -1288,12 +1467,19 @@ def career_coach_retry_node(
     state: SkillGapState,
 ) -> dict:
 
+    _trace_start("Career Coach Retry")
+
     count = (
         state.get(
             "coach_retry_count",
             0,
         )
         + 1
+    )
+
+    _trace_done(
+        "Career Coach Retry",
+        f"{count}/{MAX_COACH_RETRIES}",
     )
 
     return {
@@ -1377,6 +1563,11 @@ def profile_repair_node(
             0,
         )
         + 1
+    )
+
+    _trace_done(
+        "Profile Repair",
+        f"{count}/{MAX_PROFILE_RETRIES}",
     )
 
     return {
@@ -1469,6 +1660,8 @@ def _format_evidence_gaps(
 def final_report_node(
     state: SkillGapState,
 ) -> dict:
+
+    _trace_start("Final Report")
 
     profile = state.get(
         "candidate_profile",
@@ -1607,6 +1800,8 @@ APPLY RECOMMENDATION
 {recommendations.get("apply_recommendation", "Not available")}
 """
 
+    _trace_done("Final Report")
+
     return {
         "final_report":
             report.strip(),
@@ -1640,6 +1835,11 @@ def controlled_failure_node(
             "Workflow stopped because the "
             "analysis could not be validated."
         )
+    )
+
+    _trace_error(
+        "Controlled Failure",
+        str(message),
     )
 
     return {
