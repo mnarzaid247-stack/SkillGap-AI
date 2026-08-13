@@ -12,9 +12,13 @@ from pydantic import BaseModel, Field
 class JobRequirements(BaseModel):
     """Structured requirements extracted from a selected job."""
 
-    required_skills: list[str] = Field(default_factory=list)
+    required_skills: list[str] = Field(
+        default_factory=list
+    )
 
-    preferred_skills: list[str] = Field(default_factory=list)
+    preferred_skills: list[str] = Field(
+        default_factory=list
+    )
 
     frameworks: list[str] = Field(
         default_factory=list,
@@ -24,20 +28,30 @@ class JobRequirements(BaseModel):
         ),
     )
 
-    soft_skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(
+        default_factory=list
+    )
 
-    experience_requirements: list[str] = Field(default_factory=list)
+    experience_requirements: list[str] = Field(
+        default_factory=list
+    )
 
-    education_requirements: list[str] = Field(default_factory=list)
+    education_requirements: list[str] = Field(
+        default_factory=list
+    )
 
-    responsibilities: list[str] = Field(default_factory=list)
+    responsibilities: list[str] = Field(
+        default_factory=list
+    )
 
 
 # ==========================================
 # 2. Helper
 # ==========================================
 
-def _model_to_dict(model: BaseModel) -> dict[str, Any]:
+def _model_to_dict(
+    model: BaseModel,
+) -> dict[str, Any]:
     """Support Pydantic versions 1 and 2."""
 
     if hasattr(model, "model_dump"):
@@ -67,12 +81,16 @@ def requirements_agent(
         state["review_stage"]
     """
 
-    selected_job = state.get("selected_job")
+    selected_job = state.get(
+        "selected_job"
+    )
 
     if not selected_job:
         return {
             "job_requirements": {},
-            "requirements_error": "No selected job was provided.",
+            "requirements_error": (
+                "No selected job was provided."
+            ),
             "review_stage": "requirements",
         }
 
@@ -80,24 +98,42 @@ def requirements_agent(
     # Read selected job
     # ------------------------------------------
 
-    if isinstance(selected_job, str):
+    if isinstance(
+        selected_job,
+        str,
+    ):
         job_title = "Not provided"
         company = "Not provided"
         description = selected_job
 
-    elif isinstance(selected_job, dict):
+    elif isinstance(
+        selected_job,
+        dict,
+    ):
         job_title = str(
-            selected_job.get("title", "Not provided")
+            selected_job.get(
+                "title",
+                "Not provided",
+            )
         ).strip()
 
         company = str(
-            selected_job.get("company") or "Not provided"
+            selected_job.get(
+                "company"
+            )
+            or "Not provided"
         ).strip()
 
         description = (
-            selected_job.get("description")
-            or selected_job.get("job_description")
-            or selected_job.get("content")
+            selected_job.get(
+                "description"
+            )
+            or selected_job.get(
+                "job_description"
+            )
+            or selected_job.get(
+                "content"
+            )
             or ""
         )
 
@@ -110,7 +146,9 @@ def requirements_agent(
             "review_stage": "requirements",
         }
 
-    description = str(description).strip()
+    description = str(
+        description
+    ).strip()
 
     if not description:
         return {
@@ -126,7 +164,10 @@ def requirements_agent(
     # ------------------------------------------
 
     supervisor_feedback = str(
-        state.get("supervisor_feedback", "")
+        state.get(
+            "supervisor_feedback",
+            "",
+        )
     ).strip()
 
     feedback_section = ""
@@ -191,26 +232,40 @@ Extraction rules:
 3. Put named frameworks, libraries, platforms,
    cloud services, and technical tools in frameworks.
 
-4. Put interpersonal and behavioral abilities
+4. If a framework, library, platform, cloud service,
+   or technical tool is mandatory, include it in BOTH:
+   - required_skills
+   - frameworks
+
+5. If a framework, library, platform, cloud service,
+   or technical tool is preferred or nice-to-have,
+   include it in BOTH:
+   - preferred_skills
+   - frameworks
+
+6. Put interpersonal and behavioral abilities
    in soft_skills.
 
-5. Extract experience requirements separately.
+7. Extract experience requirements separately.
 
-6. Extract education requirements separately.
+8. Extract education requirements separately.
 
-7. Extract job responsibilities separately.
+9. Extract job responsibilities separately.
 
-8. Keep every item concise.
+10. Keep every item concise.
 
-9. Remove duplicate items.
+11. Remove duplicate items.
 
-10. Do not move a preferred skill into required_skills
+12. Do not move a preferred skill into required_skills
     unless the advertisement clearly makes it mandatory.
 
-11. If a category is not stated in the advertisement,
+13. If a category is not stated in the advertisement,
     return an empty list for that category.
 
-12. Do not add requirements based only on the job title.
+14. Do not add requirements based only on the job title.
+
+15. Do not infer tools, frameworks, or skills that are not
+    explicitly stated in the advertisement.
 """
     )
 
@@ -219,8 +274,10 @@ Extraction rules:
     # ------------------------------------------
 
     try:
-        structured_llm = llm.with_structured_output(
-            JobRequirements
+        structured_llm = (
+            llm.with_structured_output(
+                JobRequirements
+            )
         )
 
         result = structured_llm.invoke(
@@ -231,17 +288,27 @@ Extraction rules:
         )
 
         return {
-            "job_requirements": _model_to_dict(result),
-            "requirements_error": None,
-            "review_stage": "requirements",
+            "job_requirements":
+                _model_to_dict(
+                    result
+                ),
+
+            "requirements_error":
+                None,
+
+            "review_stage":
+                "requirements",
         }
 
     except Exception as error:
         return {
             "job_requirements": {},
+
             "requirements_error": (
                 f"Requirements extraction failed: "
                 f"{type(error).__name__}"
             ),
-            "review_stage": "requirements",
+
+            "review_stage":
+                "requirements",
         }

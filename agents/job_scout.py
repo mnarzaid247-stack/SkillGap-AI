@@ -72,7 +72,9 @@ def _deduplicate_jobs(jobs: list[dict]) -> list[dict]:
     seen_urls = set()
 
     for job in jobs:
-        url = job.get("url", "").strip()
+        url = str(
+            job.get("url", "")
+        ).strip()
 
         if not url or url in seen_urls:
             continue
@@ -137,13 +139,17 @@ def job_scout_agent(state: dict) -> dict:
         state["job_scout_error"]
     """
 
-    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    tavily_api_key = os.getenv(
+        "TAVILY_API_KEY"
+    )
 
     if not tavily_api_key:
         return {
             "jobs": [],
             "search_queries": [],
-            "job_scout_error": "TAVILY_API_KEY is missing.",
+            "job_scout_error": (
+                "TAVILY_API_KEY is missing."
+            ),
         }
 
     target_role = str(
@@ -164,14 +170,18 @@ def job_scout_agent(state: dict) -> dict:
         return {
             "jobs": [],
             "search_queries": [],
-            "job_scout_error": "Target role is missing.",
+            "job_scout_error": (
+                "Target role is missing."
+            ),
         }
 
     if not location:
         return {
             "jobs": [],
             "search_queries": [],
-            "job_scout_error": "Target location is missing.",
+            "job_scout_error": (
+                "Target location is missing."
+            ),
         }
 
     search_queries = _build_search_queries(
@@ -196,46 +206,91 @@ def job_scout_agent(state: dict) -> dict:
                 include_raw_content=False,
             )
 
-            results = response.get("results", [])
+            results = response.get(
+                "results",
+                [],
+            )
 
             for result in results:
                 title = str(
-                    result.get("title", "")
+                    result.get(
+                        "title",
+                        "",
+                    )
                 ).strip()
 
                 url = str(
-                    result.get("url", "")
+                    result.get(
+                        "url",
+                        "",
+                    )
                 ).strip()
 
                 content = str(
-                    result.get("content", "")
+                    result.get(
+                        "content",
+                        "",
+                    )
                 ).strip()
 
-                score = result.get("score")
+                score = result.get(
+                    "score"
+                )
 
                 if not title:
                     continue
 
-                if not _is_valid_url(url):
+                if not _is_valid_url(
+                    url
+                ):
                     continue
 
-                company = _extract_company_from_title(
-                    title
+                company = (
+                    _extract_company_from_title(
+                        title
+                    )
                 )
 
                 collected_jobs.append(
                     {
-                        "title": title,
-                        "company": company,
-                        "location": location,
-                        "url": url,
-                        "description": content,
-                        "source": urlparse(url).netloc,
-                        "search_score": score,
-                        "search_query": query,
-                        "retrieved_at": datetime.now(
-                            timezone.utc
-                        ).isoformat(),
+                        "title":
+                            title,
+
+                        "company":
+                            company,
+
+                        # Do not invent job location.
+                        # Tavily search results may not provide
+                        # a reliable structured location field.
+                        "location":
+                            None,
+
+                        # Keep the location used in the search
+                        # separately for provenance.
+                        "search_location":
+                            location,
+
+                        "url":
+                            url,
+
+                        "description":
+                            content,
+
+                        "source":
+                            urlparse(
+                                url
+                            ).netloc,
+
+                        "search_score":
+                            score,
+
+                        "search_query":
+                            query,
+
+                        "retrieved_at":
+                            datetime.now(
+                                timezone.utc
+                            ).isoformat(),
                     }
                 )
 
@@ -244,15 +299,23 @@ def job_scout_agent(state: dict) -> dict:
         )
 
         return {
-            "jobs": jobs,
-            "search_queries": search_queries,
-            "job_scout_error": None,
+            "jobs":
+                jobs,
+
+            "search_queries":
+                search_queries,
+
+            "job_scout_error":
+                None,
         }
 
     except Exception as error:
         return {
             "jobs": [],
-            "search_queries": search_queries,
+
+            "search_queries":
+                search_queries,
+
             "job_scout_error": (
                 f"Job search failed: "
                 f"{type(error).__name__}"
@@ -266,30 +329,80 @@ def job_scout_agent(state: dict) -> dict:
 
 if __name__ == "__main__":
     test_state = {
-        "target_role": "AI Engineer",
-        "location": "Riyadh, Saudi Arabia",
-        "search_retries": 0,
+        "target_role":
+            "AI Engineer",
+
+        "location":
+            "Riyadh, Saudi Arabia",
+
+        "search_retries":
+            0,
     }
 
-    print("--- Running Job Scout Agent ---")
+    print(
+        "--- Running Job Scout Agent ---"
+    )
 
-    output = job_scout_agent(test_state)
+    output = job_scout_agent(
+        test_state
+    )
 
-    print("\nSearch Queries:")
-    for query in output["search_queries"]:
-        print("-", query)
+    print(
+        "\nSearch Queries:"
+    )
 
-    print("\nJobs Found:")
+    for query in output[
+        "search_queries"
+    ]:
+        print(
+            "-",
+            query,
+        )
+
+    print(
+        "\nJobs Found:"
+    )
 
     for index, job in enumerate(
         output["jobs"],
         start=1,
     ):
-        print(f"\n{index}. {job['title']}")
-        print("Company:", job["company"])
-        print("Location:", job["location"])
-        print("URL:", job["url"])
-        print("Source:", job["source"])
+        print(
+            f"\n{index}. "
+            f"{job['title']}"
+        )
 
-    print("\nError:")
-    print(output["job_scout_error"])
+        print(
+            "Company:",
+            job["company"],
+        )
+
+        print(
+            "Job Location:",
+            job["location"],
+        )
+
+        print(
+            "Search Location:",
+            job["search_location"],
+        )
+
+        print(
+            "URL:",
+            job["url"],
+        )
+
+        print(
+            "Source:",
+            job["source"],
+        )
+
+    print(
+        "\nError:"
+    )
+
+    print(
+        output[
+            "job_scout_error"
+        ]
+    )

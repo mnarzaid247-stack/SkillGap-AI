@@ -696,6 +696,25 @@ def limited_jobs_ready_node(
     }
 
 
+def jobs_branch_done_node(
+    state: SkillGapState,
+) -> dict:
+    """
+    Common completion point for the job-search branch.
+
+    Both normal job results and limited job results pass
+    through this node before the Human-in-the-Loop fan-in.
+
+    This preserves the existing value of limited_results.
+    """
+
+    return {
+        "execution_logs": [
+            "[Workflow] Job-search branch completed"
+        ],
+    }
+
+
 # ==========================================
 # 11. Human-in-the-Loop
 # ==========================================
@@ -1696,6 +1715,11 @@ def build_graph():
     )
 
     workflow.add_node(
+        "jobs_branch_done",
+        jobs_branch_done_node,
+    )
+
+    workflow.add_node(
         "human_job_selection",
         human_job_selection_node,
     )
@@ -1832,8 +1856,13 @@ def build_graph():
     )
 
     workflow.add_edge(
-        "limited_jobs_ready",
         "jobs_ready",
+        "jobs_branch_done",
+    )
+
+    workflow.add_edge(
+        "limited_jobs_ready",
+        "jobs_branch_done",
     )
 
     # --------------------------------------
@@ -1886,7 +1915,7 @@ def build_graph():
     workflow.add_edge(
         [
             "profile_ready",
-            "jobs_ready",
+            "jobs_branch_done",
         ],
         "human_job_selection",
     )
