@@ -3,3 +3,4 @@ langchain-openai
 pydantic
 typing-extensions
 python-dotenv
+tavily-python

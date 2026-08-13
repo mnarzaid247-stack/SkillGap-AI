@@ -1,126 +1,295 @@
 import os
-from typing import List, Optional
-from typing_extensions import TypedDict
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
+from tavily import TavilyClient
 
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 
-# قراءة المتغيرات من ملف .env
 load_dotenv()
 
 
 # ==========================================
-# 1. Shared State Definition
+# 1. Constants
 # ==========================================
-class AgentState(TypedDict):
-    # User Inputs
-    cv_text: str
-    target_role: str
-    target_location: str
-    
-    # Profile Analyzer Outputs
-    candidate_skills: List[str]
-    candidate_experience_years: int
-    candidate_summary: str
 
-    # Job Scout Agent Outputs
-    job_description: str
-    job_requirements: List[str]
-    job_title_found: str
-    
-    # Supervisor & Workflow Control Flags
-    review_stage: Optional[str]
-    supervisor_decision: Optional[str]
-    supervisor_feedback: Optional[str]
-    profile_retry_count: int
+MAX_RESULTS_PER_SEARCH = 5
 
 
 # ==========================================
-# 2. Structured Output Schema
+# 2. Helper Functions
 # ==========================================
-class JobScoutOutput(BaseModel):
-    job_title: str = Field(
-        description="The formal title of the target job position."
+
+def _is_valid_url(url: str) -> bool:
+    """Check whether the result contains a valid HTTP/HTTPS URL."""
+
+    if not url:
+        return False
+
+    parsed = urlparse(url)
+
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _extract_company_from_title(title: str) -> str | None:
+    """
+    Try to extract company name from common search-result titles.
+
+    Examples:
+        "AI Engineer - Company Name"
+        "AI Engineer | Company Name"
+        "AI Engineer at Company Name"
+
+    If the company cannot be identified safely, return None.
+    """
+
+    if not title:
+        return None
+
+    separators = [
+        " at ",
+        " - ",
+        " | ",
+    ]
+
+    for separator in separators:
+        if separator in title:
+            parts = title.split(separator)
+
+            if len(parts) >= 2:
+                company = parts[-1].strip()
+
+                if company:
+                    return company
+
+    return None
+
+
+def _deduplicate_jobs(jobs: list[dict]) -> list[dict]:
+    """Remove duplicate jobs using their URLs."""
+
+    unique_jobs = []
+    seen_urls = set()
+
+    for job in jobs:
+        url = job.get("url", "").strip()
+
+        if not url or url in seen_urls:
+            continue
+
+        seen_urls.add(url)
+        unique_jobs.append(job)
+
+    return unique_jobs
+
+
+def _build_search_queries(
+    target_role: str,
+    location: str,
+    retry_count: int,
+) -> list[str]:
+    """
+    Build controlled search queries.
+
+    The query becomes broader when the search workflow retries.
+    """
+
+    if retry_count <= 0:
+        return [
+            f'"{target_role}" jobs {location}',
+            f'"{target_role}" careers {location}',
+        ]
+
+    if retry_count == 1:
+        return [
+            f'{target_role} jobs {location}',
+            f'{target_role} vacancy {location}',
+            f'AI Engineer jobs {location}',
+            f'Generative AI Engineer jobs {location}',
+            f'AI Specialist jobs {location}',
+        ]
+
+    return [
+        f'{target_role} jobs Saudi Arabia',
+        f'AI Engineer jobs Saudi Arabia',
+        f'Generative AI Engineer jobs Saudi Arabia',
+        f'AI Specialist jobs Saudi Arabia',
+        f'Junior AI Engineer jobs Saudi Arabia',
+    ]
+
+
+# ==========================================
+# 3. Job Scout Agent
+# ==========================================
+
+def job_scout_agent(state: dict) -> dict:
+    """
+    Search for real current job opportunities using Tavily.
+
+    Inputs:
+        state["target_role"]
+        state["location"] or state["target_location"]
+        state["search_retries"]
+
+    Outputs:
+        state["jobs"]
+        state["search_queries"]
+        state["job_scout_error"]
+    """
+
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+
+    if not tavily_api_key:
+        return {
+            "jobs": [],
+            "search_queries": [],
+            "job_scout_error": "TAVILY_API_KEY is missing.",
+        }
+
+    target_role = str(
+        state.get("target_role", "")
+    ).strip()
+
+    location = str(
+        state.get("location")
+        or state.get("target_location")
+        or ""
+    ).strip()
+
+    search_retries = int(
+        state.get("search_retries", 0)
     )
-    job_description: str = Field(
-        description="A clear summary of the job responsibilities and scope."
+
+    if not target_role:
+        return {
+            "jobs": [],
+            "search_queries": [],
+            "job_scout_error": "Target role is missing.",
+        }
+
+    if not location:
+        return {
+            "jobs": [],
+            "search_queries": [],
+            "job_scout_error": "Target location is missing.",
+        }
+
+    search_queries = _build_search_queries(
+        target_role=target_role,
+        location=location,
+        retry_count=search_retries,
     )
-    key_requirements: List[str] = Field(
-        description="List of essential skills, tools, and qualifications required for this role."
+
+    client = TavilyClient(
+        api_key=tavily_api_key
     )
+
+    collected_jobs = []
+
+    try:
+        for query in search_queries:
+            response = client.search(
+                query=query,
+                search_depth="advanced",
+                max_results=MAX_RESULTS_PER_SEARCH,
+                include_answer=False,
+                include_raw_content=False,
+            )
+
+            results = response.get("results", [])
+
+            for result in results:
+                title = str(
+                    result.get("title", "")
+                ).strip()
+
+                url = str(
+                    result.get("url", "")
+                ).strip()
+
+                content = str(
+                    result.get("content", "")
+                ).strip()
+
+                score = result.get("score")
+
+                if not title:
+                    continue
+
+                if not _is_valid_url(url):
+                    continue
+
+                company = _extract_company_from_title(
+                    title
+                )
+
+                collected_jobs.append(
+                    {
+                        "title": title,
+                        "company": company,
+                        "location": location,
+                        "url": url,
+                        "description": content,
+                        "source": urlparse(url).netloc,
+                        "search_score": score,
+                        "search_query": query,
+                        "retrieved_at": datetime.now(
+                            timezone.utc
+                        ).isoformat(),
+                    }
+                )
+
+        jobs = _deduplicate_jobs(
+            collected_jobs
+        )
+
+        return {
+            "jobs": jobs,
+            "search_queries": search_queries,
+            "job_scout_error": None,
+        }
+
+    except Exception as error:
+        return {
+            "jobs": [],
+            "search_queries": search_queries,
+            "job_scout_error": (
+                f"Job search failed: "
+                f"{type(error).__name__}"
+            ),
+        }
 
 
 # ==========================================
-# 3. Job Scout Agent Node
+# 4. Local Test
 # ==========================================
-def job_scout_agent(state: AgentState) -> dict:
-    # جلب المفتاح المتاح
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-    
-    if not api_key:
-        raise ValueError("لم يتم العثور على API Key! تأكدي من ضبط المتغيرات البيئية.")
 
-    # Initialize LLM via OpenRouter
-    llm = ChatOpenAI(
-        model="openai/gpt-4o-mini",
-        temperature=0.2,
-        api_key=api_key,
-        base_url="https://openrouter.ai/api/v1"
-    )
-    structured_llm = llm.with_structured_output(JobScoutOutput)
-
-    # Fetch inputs from state
-    target_role = state.get("target_role", "Software Engineer")
-    target_location = state.get("target_location", "Riyadh")
-
-    # System Prompt
-    system_prompt = (
-        "You are an expert Talent Acquisition Specialist and Job Market Scout.\n"
-        "Your role is to analyze a target job title and location, then generate a realistic, standard market profile "
-        "including job title, core description, and essential technical/soft skill requirements."
-    )
-
-    human_prompt = f"Target Role: {target_role}\nTarget Location: {target_location}"
-
-    # Invoke LLM
-    result: JobScoutOutput = structured_llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=human_prompt)
-    ])
-
-    return {
-        "job_title_found": result.job_title,
-        "job_description": result.job_description,
-        "job_requirements": result.key_requirements,
-        "review_stage": "job_scout"
-    }
-
-
-# ==========================================
-# 4. Local Execution Test
-# ==========================================
 if __name__ == "__main__":
-    test_state: AgentState = {
-        "cv_text": "",
+    test_state = {
         "target_role": "AI Engineer",
-        "target_location": "Riyadh",
-        "candidate_skills": [],
-        "candidate_experience_years": 0,
-        "candidate_summary": "",
-        "job_description": "",
-        "job_requirements": [],
-        "job_title_found": "",
-        "review_stage": None,
-        "supervisor_decision": None,
-        "supervisor_feedback": None,
-        "profile_retry_count": 0
+        "location": "Riyadh, Saudi Arabia",
+        "search_retries": 0,
     }
 
     print("--- Running Job Scout Agent ---")
+
     output = job_scout_agent(test_state)
-    
-    print("\nJob Title:", output["job_title_found"])
-    print("\nJob Description:\n", output["job_description"])
-    print("\nKey Requirements:\n", output["job_requirements"])
+
+    print("\nSearch Queries:")
+    for query in output["search_queries"]:
+        print("-", query)
+
+    print("\nJobs Found:")
+
+    for index, job in enumerate(
+        output["jobs"],
+        start=1,
+    ):
+        print(f"\n{index}. {job['title']}")
+        print("Company:", job["company"])
+        print("Location:", job["location"])
+        print("URL:", job["url"])
+        print("Source:", job["source"])
+
+    print("\nError:")
+    print(output["job_scout_error"])
