@@ -4,3 +4,8 @@ pydantic
 typing-extensions
 python-dotenv
 tavily-python
+langgraph
+fastapi
+uvicorn
+python-multipart
+pypdf
