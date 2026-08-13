@@ -1,8 +1,10 @@
+import json
+import re
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 # ==========================================
@@ -46,7 +48,7 @@ class JobRequirements(BaseModel):
 
 
 # ==========================================
-# 2. Helper
+# 2. Helpers
 # ==========================================
 
 def _model_to_dict(
@@ -58,6 +60,306 @@ def _model_to_dict(
         return model.model_dump()
 
     return model.dict()
+
+
+def _validate_requirements_payload(
+    payload: dict[str, Any],
+) -> JobRequirements:
+    """Support Pydantic versions 1 and 2."""
+
+    if hasattr(
+        JobRequirements,
+        "model_validate",
+    ):
+        return JobRequirements.model_validate(
+            payload
+        )
+
+    return JobRequirements.parse_obj(
+        payload
+    )
+
+
+def _extract_message_text(
+    raw_message: Any,
+) -> str:
+    """
+    Extract text content from a raw LangChain message.
+    """
+
+    if raw_message is None:
+        return ""
+
+    content = getattr(
+        raw_message,
+        "content",
+        "",
+    )
+
+    if isinstance(
+        content,
+        str,
+    ):
+        return content.strip()
+
+    if isinstance(
+        content,
+        list,
+    ):
+        parts = []
+
+        for block in content:
+            if isinstance(
+                block,
+                str,
+            ):
+                parts.append(
+                    block
+                )
+
+            elif isinstance(
+                block,
+                dict,
+            ):
+                text = (
+                    block.get("text")
+                    or block.get("content")
+                    or ""
+                )
+
+                if text:
+                    parts.append(
+                        str(text)
+                    )
+
+        return "\n".join(
+            parts
+        ).strip()
+
+    return str(
+        content
+    ).strip()
+
+
+def _extract_json_object(
+    text: str,
+) -> dict[str, Any] | None:
+    """
+    Extract a JSON object from model output without
+    making another LLM request.
+    """
+
+    if not text:
+        return None
+
+    cleaned = text.strip()
+
+    cleaned = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    cleaned = re.sub(
+        r"\s*```$",
+        "",
+        cleaned,
+    )
+
+    try:
+        payload = json.loads(
+            cleaned
+        )
+
+        if isinstance(
+            payload,
+            dict,
+        ):
+            return payload
+
+    except json.JSONDecodeError:
+        pass
+
+    start = cleaned.find(
+        "{"
+    )
+
+    end = cleaned.rfind(
+        "}"
+    )
+
+    if (
+        start == -1
+        or end == -1
+        or end <= start
+    ):
+        return None
+
+    try:
+        payload = json.loads(
+            cleaned[
+                start:end + 1
+            ]
+        )
+
+        if isinstance(
+            payload,
+            dict,
+        ):
+            return payload
+
+    except json.JSONDecodeError:
+        return None
+
+    return None
+
+
+def _normalize_list_field(
+    value: Any,
+) -> list[str]:
+    """
+    Normalize harmless container-shape differences.
+
+    Does not invent requirements.
+    """
+
+    if value is None:
+        return []
+
+    if isinstance(
+        value,
+        str,
+    ):
+        value = value.strip()
+
+        if not value:
+            return []
+
+        return [
+            value
+        ]
+
+    if not isinstance(
+        value,
+        list,
+    ):
+        return []
+
+    cleaned = []
+
+    seen = set()
+
+    for item in value:
+        text = str(
+            item
+        ).strip()
+
+        if not text:
+            continue
+
+        key = text.casefold()
+
+        if key in seen:
+            continue
+
+        seen.add(
+            key
+        )
+
+        cleaned.append(
+            text
+        )
+
+    return cleaned
+
+
+def _normalize_requirements_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Normalize structural differences in a model response.
+
+    This does not create or infer any job requirements.
+    """
+
+    normalized = dict(
+        payload
+    )
+
+    fields = [
+        "required_skills",
+        "preferred_skills",
+        "frameworks",
+        "soft_skills",
+        "experience_requirements",
+        "education_requirements",
+        "responsibilities",
+    ]
+
+    for field_name in fields:
+        normalized[
+            field_name
+        ] = _normalize_list_field(
+            normalized.get(
+                field_name,
+                [],
+            )
+        )
+
+    return normalized
+
+
+def _safe_error_message(
+    error: Exception,
+) -> str:
+    """
+    Return useful validation details without exposing
+    provider data or sensitive request contents.
+    """
+
+    if isinstance(
+        error,
+        ValidationError,
+    ):
+        try:
+            details = error.errors()
+
+            if details:
+                first = details[0]
+
+                location = ".".join(
+                    str(part)
+                    for part in first.get(
+                        "loc",
+                        [],
+                    )
+                )
+
+                message = first.get(
+                    "msg",
+                    "Invalid structured output.",
+                )
+
+                if location:
+                    return (
+                        "Requirements structured output "
+                        f"failed at '{location}': "
+                        f"{message}"
+                    )
+
+                return (
+                    "Requirements structured output "
+                    f"failed: {message}"
+                )
+
+        except Exception:
+            pass
+
+    return (
+        "Requirements extraction failed: "
+        f"{type(error).__name__}"
+    )
 
 
 # ==========================================
@@ -266,6 +568,20 @@ Extraction rules:
 
 15. Do not infer tools, frameworks, or skills that are not
     explicitly stated in the advertisement.
+
+16. Every field must be returned as a JSON array of strings.
+
+Expected output shape:
+
+{{
+  "required_skills": [],
+  "preferred_skills": [],
+  "frameworks": [],
+  "soft_skills": [],
+  "experience_requirements": [],
+  "education_requirements": [],
+  "responsibilities": []
+}}
 """
     )
 
@@ -276,16 +592,138 @@ Extraction rules:
     try:
         structured_llm = (
             llm.with_structured_output(
-                JobRequirements
+                JobRequirements,
+                include_raw=True,
             )
         )
 
-        result = structured_llm.invoke(
+        response = structured_llm.invoke(
             [
                 system_message,
                 human_message,
             ]
         )
+
+        parsed = response.get(
+            "parsed"
+        )
+
+        parsing_error = response.get(
+            "parsing_error"
+        )
+
+
+                # --------------------------------------
+        # Debug structured output
+        # --------------------------------------
+
+        raw_message = response.get("raw")
+
+        raw_content = getattr(
+            raw_message,
+            "content",
+            None,
+        )
+
+        print(
+            "[DEBUG] Requirements parsed:",
+            type(parsed).__name__
+            if parsed is not None
+            else "None",
+        )
+
+        print(
+            "[DEBUG] Requirements raw type:",
+            type(raw_message).__name__
+            if raw_message is not None
+            else "None",
+        )
+
+        print(
+            "[DEBUG] Requirements raw content type:",
+            type(raw_content).__name__
+            if raw_content is not None
+            else "None",
+        )
+
+        print(
+            "[DEBUG] Requirements raw content length:",
+            len(raw_content)
+            if isinstance(raw_content, (str, list))
+            else 0,
+        )
+
+        print(
+            "[DEBUG] Requirements additional kwargs:",
+            list(
+                getattr(
+                    raw_message,
+                    "additional_kwargs",
+                    {},
+                ).keys()
+            )
+            if raw_message is not None
+            else [],
+        )
+
+        print(
+            "[DEBUG] Requirements parsing error:",
+            str(parsing_error)[:500]
+            if parsing_error is not None
+            else "None",
+        )
+
+        # --------------------------------------
+        # Normal structured output succeeded
+        # --------------------------------------
+
+        if isinstance(
+            parsed,
+            JobRequirements,
+        ):
+            result = parsed
+
+        # --------------------------------------
+        # Fallback: same model response only
+        # --------------------------------------
+
+        else:
+            raw_message = response.get(
+                "raw"
+            )
+
+            raw_text = (
+                _extract_message_text(
+                    raw_message
+                )
+            )
+
+            payload = (
+                _extract_json_object(
+                    raw_text
+                )
+            )
+
+            if payload is None:
+                if parsing_error is not None:
+                    raise parsing_error
+
+                raise ValueError(
+                    "The model response did not contain "
+                    "a valid requirements JSON object."
+                )
+
+            normalized_payload = (
+                _normalize_requirements_payload(
+                    payload
+                )
+            )
+
+            result = (
+                _validate_requirements_payload(
+                    normalized_payload
+                )
+            )
 
         return {
             "job_requirements":
@@ -304,10 +742,10 @@ Extraction rules:
         return {
             "job_requirements": {},
 
-            "requirements_error": (
-                f"Requirements extraction failed: "
-                f"{type(error).__name__}"
-            ),
+            "requirements_error":
+                _safe_error_message(
+                    error
+                ),
 
             "review_stage":
                 "requirements",

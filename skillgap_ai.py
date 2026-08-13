@@ -389,9 +389,10 @@ def _normalize_text(
     ).casefold()
 
     value = re.sub(
-        r"[^a-z0-9+#. ]+",
+        r"[^\w+#. ]+",
         " ",
         value,
+        flags=re.UNICODE,
     )
 
     value = re.sub(
@@ -1769,6 +1770,22 @@ def controlled_failure_node(
 # ==========================================
 # 23. Graph Builder
 # ==========================================
+def route_requirements_result(
+    state: SkillGapState,
+) -> str:
+
+    if state.get("requirements_error"):
+        retries = state.get(
+            "requirements_retry_count",
+            0,
+        )
+
+        if retries < MAX_REQUIREMENTS_RETRIES:
+            return "retry"
+
+        return "failure"
+
+    return "supervisor"
 
 def build_graph():
 
@@ -2051,23 +2068,28 @@ def build_graph():
     )
 
     workflow.add_edge(
-        "selected_job_enrichment",
-        "requirements",
-    )
+    "selected_job_enrichment",
+    "requirements",
+)
 
-    # --------------------------------------
-    # Requirements
-    # --------------------------------------
+# --------------------------------------
+# Requirements
+# --------------------------------------
+
+    workflow.add_conditional_edges(
+    "requirements",
+    route_requirements_result,
+    {
+        "supervisor": "supervisor",
+        "retry": "requirements_retry",
+        "failure": "controlled_failure",
+    },
+)
 
     workflow.add_edge(
-        "requirements",
-        "supervisor",
-    )
-
-    workflow.add_edge(
-        "requirements_retry",
-        "requirements",
-    )
+    "requirements_retry",
+    "requirements",
+)
 
     # --------------------------------------
     # Gap Analyzer / Quality Check
