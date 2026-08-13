@@ -148,6 +148,62 @@ class SupervisorAgent:
                 "parsing_error"
             )
 
+            raw_message = response.get("raw")
+
+            raw_content = getattr(
+    raw_message,
+    "content",
+    None,
+)
+
+            print(
+                "[DEBUG] Supervisor parsed:",
+                type(result).__name__
+                if result is not None
+                else "None",
+)
+
+            print(
+    "[DEBUG] Supervisor raw type:",
+    type(raw_message).__name__
+    if raw_message is not None
+    else "None",
+)
+
+            print(
+    "[DEBUG] Supervisor raw content type:",
+    type(raw_content).__name__
+    if raw_content is not None
+    else "None",
+)
+
+            print(
+    "[DEBUG] Supervisor raw content length:",
+    len(raw_content)
+    if isinstance(raw_content, (str, list))
+    else 0,
+)
+
+            print(
+    "[DEBUG] Supervisor additional kwargs:",
+    list(
+        getattr(
+            raw_message,
+            "additional_kwargs",
+            {},
+        ).keys()
+    )
+    if raw_message is not None
+    else [],
+)
+
+            print(
+    "[DEBUG] Supervisor parsing error:",
+    str(parsing_error)[:500]
+    if parsing_error is not None
+    else "None",
+)
+
             if result is None:
                 if parsing_error is not None:
                     raise parsing_error
@@ -266,7 +322,14 @@ Review:
 - Projects were captured when present.
 - Experience was captured when present.
 - Education was captured when present.
-- Skill evidence is grounded in the CV.
+- Skill evidence must be grounded in the CV.
+- It is acceptable for some listed skills to have no evidence.
+- Do NOT require evidence for every listed skill.
+- experience_level may be "Unknown" when the CV does not support
+  a reliable classification.
+- Do NOT request a retry only because experience_level is "Unknown".
+- Future-dated roles may be preserved if they are explicitly stated
+  in the CV, but they must not be misrepresented as completed experience.
 - The result is not empty or obviously incomplete.
 - Unsupported candidate facts were not invented.
 """
