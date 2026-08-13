@@ -188,12 +188,23 @@ supervisor_agent = SupervisorAgent()
 
 
 # ==========================================
+# Live Terminal Logging
+# ==========================================
+
+def _live_log(message: str) -> None:
+    """Print workflow progress immediately in the terminal."""
+    print(message, flush=True)
+
+
+# ==========================================
 # 4. Input Guard
 # ==========================================
 
 def input_guard_node(
     state: SkillGapState,
 ) -> dict:
+
+    _live_log("[START] Input Guard")
 
     cv_text = str(
         state.get("cv_text", "")
@@ -235,12 +246,15 @@ def input_guard_node(
         )
 
     if errors:
+        _live_log(f"[ERROR] Input Guard — {' '.join(errors)}")
         return {
             "error_message": " ".join(errors),
             "execution_logs": [
                 "[Input Guard] Input validation failed"
             ],
         }
+
+    _live_log("[DONE] Input Guard")
 
     return {
         "cv_text": cv_text,
@@ -284,6 +298,8 @@ def parallel_start_node(
     independently after this node.
     """
 
+    _live_log("[DONE] Workflow Fan-Out — Profile Analyzer + Job Scout")
+
     return {
         "execution_logs": [
             (
@@ -302,9 +318,18 @@ def profile_analyzer_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[START] Profile Analyzer")
+
     result = profile_analyzer_agent(
         state
     )
+
+    if result.get("profile_error"):
+        _live_log(
+            f"[ERROR] Profile Analyzer — {result.get('profile_error')}"
+        )
+    else:
+        _live_log("[DONE] Profile Analyzer")
 
     return {
         **result,
@@ -323,9 +348,20 @@ def job_scout_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[START] Job Scout")
+
     result = job_scout_agent(
         state
     )
+
+    if result.get("job_scout_error"):
+        _live_log(
+            f"[ERROR] Job Scout — {result.get('job_scout_error')}"
+        )
+    else:
+        _live_log(
+            f"[DONE] Job Scout — {len(result.get('jobs', []))} raw results"
+        )
 
     return {
         **result,
@@ -494,6 +530,8 @@ def job_validation_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[START] Job Validation")
+
     jobs = state.get(
         "jobs",
         [],
@@ -569,6 +607,10 @@ def job_validation_node(
         :MAX_DISPLAYED_JOBS
     ]
 
+    _live_log(
+        f"[DONE] Job Validation — {len(valid_jobs)} valid jobs"
+    )
+
     return {
         "jobs": valid_jobs,
 
@@ -634,6 +676,10 @@ def refine_search_node(
         current + 1
     )
 
+    _live_log(
+        f"[RETRY] Job Search — {new_count}/{MAX_SEARCH_RETRIES}"
+    )
+
     return {
         "search_retries":
             new_count,
@@ -656,6 +702,8 @@ def profile_ready_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[DONE] Profile Branch Ready")
+
     return {
         "profile_ready": True,
 
@@ -668,6 +716,8 @@ def profile_ready_node(
 def jobs_ready_node(
     state: SkillGapState,
 ) -> dict:
+
+    _live_log("[DONE] Job Search Ready")
 
     return {
         "jobs_ready": True,
@@ -682,6 +732,8 @@ def jobs_ready_node(
 def limited_jobs_ready_node(
     state: SkillGapState,
 ) -> dict:
+
+    _live_log("[DONE] Job Search Ready — limited results")
 
     return {
         "jobs_ready": True,
@@ -708,6 +760,8 @@ def jobs_branch_done_node(
     This preserves the existing value of limited_results.
     """
 
+    _live_log("[DONE] Job Search Branch")
+
     return {
         "execution_logs": [
             "[Workflow] Job-search branch completed"
@@ -722,6 +776,8 @@ def jobs_branch_done_node(
 def human_job_selection_node(
     state: SkillGapState,
 ) -> dict:
+
+    _live_log("[WAIT] Human Job Selection")
 
     jobs = state.get(
         "jobs",
@@ -878,6 +934,8 @@ def selected_job_enrichment_node(
     search snippet instead of fabricating data.
     """
 
+    _live_log("[START] Selected Job Enrichment")
+
     selected_job = dict(
         state.get(
             "selected_job",
@@ -1021,10 +1079,19 @@ def requirements_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[START] Requirements Agent")
+
     result = requirements_agent(
         state,
         llm,
     )
+
+    if result.get("requirements_error"):
+        _live_log(
+            f"[ERROR] Requirements Agent — {result.get('requirements_error')}"
+        )
+    else:
+        _live_log("[DONE] Requirements Agent")
 
     return {
         **result,
@@ -1045,6 +1112,8 @@ def requirements_node(
 def gap_analyzer_node(
     state: SkillGapState,
 ) -> dict:
+
+    _live_log("[START] Gap Analyzer")
 
     result = gap_analyzer(
         state
@@ -1071,6 +1140,17 @@ def gap_analyzer_node(
             f" — Skill Coverage = {coverage}%"
         )
 
+    if result.get("gap_error"):
+        _live_log(
+            f"[ERROR] Gap Analyzer — {result.get('gap_error')}"
+        )
+    else:
+        _live_log(
+            f"[DONE] Gap Analyzer — Skill Coverage = {coverage}%"
+            if coverage is not None
+            else "[DONE] Gap Analyzer"
+        )
+
     return {
         **result,
 
@@ -1088,12 +1168,21 @@ def career_coach_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[START] Career Coach")
+
     result = (
         career_coach_agent
         .generate_recommendations(
             state
         )
     )
+
+    if result.get("career_coach_error"):
+        _live_log(
+            f"[ERROR] Career Coach — {result.get('career_coach_error')}"
+        )
+    else:
+        _live_log("[DONE] Career Coach")
 
     return {
         **result,
@@ -1115,6 +1204,13 @@ def supervisor_node(
     state: SkillGapState,
 ) -> dict:
 
+    stage = state.get(
+        "review_stage",
+        "unknown",
+    )
+
+    _live_log(f"[START] Supervisor [{stage}]")
+
     result = (
         supervisor_agent.review(
             state
@@ -1126,9 +1222,8 @@ def supervisor_node(
         "controlled_failure",
     )
 
-    stage = state.get(
-        "review_stage",
-        "unknown",
+    _live_log(
+        f"[DONE] Supervisor [{stage}] — {decision}"
     )
 
     return {
@@ -1246,6 +1341,8 @@ def profile_retry_node(
         + 1
     )
 
+    _live_log("[RETRY] Profile Analyzer — gap quality repair")
+
     return {
         "profile_retry_count":
             count,
@@ -1271,6 +1368,10 @@ def requirements_retry_node(
         + 1
     )
 
+    _live_log(
+        f"[RETRY] Requirements Agent — {count}/{MAX_REQUIREMENTS_RETRIES}"
+    )
+
     return {
         "requirements_retry_count":
             count,
@@ -1294,6 +1395,10 @@ def career_coach_retry_node(
             0,
         )
         + 1
+    )
+
+    _live_log(
+        f"[RETRY] Career Coach — {count}/{MAX_COACH_RETRIES}"
     )
 
     return {
@@ -1470,6 +1575,8 @@ def final_report_node(
     state: SkillGapState,
 ) -> dict:
 
+    _live_log("[START] Final Report")
+
     profile = state.get(
         "candidate_profile",
         {},
@@ -1607,6 +1714,8 @@ APPLY RECOMMENDATION
 {recommendations.get("apply_recommendation", "Not available")}
 """
 
+    _live_log("[DONE] Final Report")
+
     return {
         "final_report":
             report.strip(),
@@ -1641,6 +1750,8 @@ def controlled_failure_node(
             "analysis could not be validated."
         )
     )
+
+    _live_log(f"[ERROR] Controlled Failure — {message}")
 
     return {
         "error_message":

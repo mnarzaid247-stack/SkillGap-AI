@@ -4,7 +4,7 @@ from typing import Any, Literal
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 load_dotenv()
@@ -86,7 +86,8 @@ class SupervisorAgent:
 
         self.structured_llm = (
             self.llm.with_structured_output(
-                SupervisorOutput
+                SupervisorOutput,
+                include_raw=True,
             )
         )
 
@@ -135,11 +136,25 @@ class SupervisorAgent:
         )
 
         try:
-            result: SupervisorOutput = (
-                self.structured_llm.invoke(
-                    prompt_messages
-                )
+            response = self.structured_llm.invoke(
+                prompt_messages
             )
+
+            result = response.get(
+                "parsed"
+            )
+
+            parsing_error = response.get(
+                "parsing_error"
+            )
+
+            if result is None:
+                if parsing_error is not None:
+                    raise parsing_error
+
+                raise ValueError(
+                    "Supervisor returned no parsed output."
+                )
 
             validated = self._validate_decision(
                 result=result,
@@ -158,6 +173,52 @@ class SupervisorAgent:
             }
 
         except Exception as error:
+            error_detail = (
+                f"{type(error).__name__}"
+            )
+
+            if isinstance(
+                error,
+                ValidationError,
+            ):
+                try:
+                    validation_errors = (
+                        error.errors()
+                    )
+
+                    if validation_errors:
+                        first_error = (
+                            validation_errors[0]
+                        )
+
+                        location = ".".join(
+                            str(part)
+                            for part in first_error.get(
+                                "loc",
+                                [],
+                            )
+                        )
+
+                        message = (
+                            first_error.get(
+                                "msg",
+                                "Invalid structured output.",
+                            )
+                        )
+
+                        if location:
+                            error_detail = (
+                                "ValidationError at "
+                                f"'{location}': {message}"
+                            )
+                        else:
+                            error_detail = (
+                                "ValidationError: "
+                                f"{message}"
+                            )
+                except Exception:
+                    pass
+
             return {
                 "supervisor_decision":
                     "controlled_failure",
@@ -168,8 +229,8 @@ class SupervisorAgent:
                 ),
 
                 "supervisor_error": (
-                    f"Supervisor review failed: "
-                    f"{type(error).__name__}"
+                    "Supervisor review failed: "
+                    f"{error_detail}"
                 ),
             }
 
