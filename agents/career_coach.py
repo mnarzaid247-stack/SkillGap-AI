@@ -62,17 +62,47 @@ class CareerCoachAgent:
 
     def _build_prompt(self, state: dict) -> str:
         target_role = state.get("target_role", "")
-        matched_skills = state.get("matched_required_skills", [])
-        missing_skills = state.get("missing_required_skills", [])
-        evidence_gaps = state.get("evidence_gaps", [])
-        skill_coverage = state.get("skill_coverage", 0)
-        supervisor_feedback = state.get("supervisor_feedback", "")
+
+        gap_analysis = state.get("gap_analysis", {})
+
+        matched_skills = gap_analysis.get(
+            "matching_required_skills",
+            []
+        )
+
+        missing_skills = gap_analysis.get(
+            "missing_required_skills",
+            []
+        )
+
+        evidence_gaps = gap_analysis.get(
+            "evidence_gaps",
+            []
+        )
+
+        skill_coverage = gap_analysis.get(
+            "skill_coverage",
+            0
+        )
+
+        existing_priority_gaps = gap_analysis.get(
+            "priority_gaps",
+            []
+        )
+
+        supervisor_feedback = state.get(
+            "supervisor_feedback",
+            ""
+        )
 
         return f"""
 You are the Career Coach Agent for SkillGap AI.
 
 Your responsibility is to convert VERIFIED gap-analysis results
-into practical career recommendations.
+into practical and realistic career recommendations.
+
+You must use only the information provided in the verified
+gap analysis.
 
 TARGET ROLE:
 {target_role}
@@ -89,22 +119,55 @@ EVIDENCE GAPS:
 SKILL COVERAGE:
 {skill_coverage}%
 
+EXISTING PRIORITY GAPS:
+{existing_priority_gaps}
+
 SUPERVISOR FEEDBACK:
 {supervisor_feedback}
 
 RULES:
 
 1. Do NOT re-analyze the CV.
+
 2. Do NOT re-analyze the job advertisement.
-3. Do NOT invent missing skills.
-4. Priority gaps must come from MISSING REQUIRED SKILLS.
+
+3. Do NOT invent new missing skills.
+
+4. Priority gaps must come only from
+   MISSING REQUIRED SKILLS.
+
 5. Return at most 3 priority gaps.
-6. HIGH priority should be used for important required skills.
-7. Recommend a realistic learning order.
-8. Suggest ONE practical portfolio project.
-9. The portfolio project should help demonstrate missing skills.
-10. Do not guarantee employment or job acceptance.
-11. Give a practical next action.
-12. If supervisor feedback exists, improve the recommendation
+
+6. Use the existing verified priority gaps when useful,
+   but do not introduce skills that are not present
+   in MISSING REQUIRED SKILLS.
+
+7. HIGH priority should be used for important required
+   skills that directly affect readiness for the target role.
+
+8. Recommend a realistic learning order based on the
+   verified missing skills.
+
+9. Suggest exactly ONE practical portfolio project.
+
+10. The portfolio project should help demonstrate one
+    or more verified missing skills.
+
+11. The portfolio project may also use already matched
+    skills when useful.
+
+12. Do not guarantee employment, hiring, interview success,
+    or job acceptance.
+
+13. Give one clear and practical next action.
+
+14. The apply recommendation should clearly explain whether
+    the user should consider applying now while learning
+    the missing skills.
+
+15. If supervisor feedback exists, improve the recommendation
     according to that feedback.
+
+16. Keep all recommendations grounded in the provided
+    SkillGap analysis.
 """
