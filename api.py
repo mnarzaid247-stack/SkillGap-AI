@@ -1,14 +1,17 @@
-import io
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from pypdf import PdfReader
 from langgraph.types import Command
+from pydantic import BaseModel
 
+from api_helpers import (
+    extract_pdf_text,
+    get_interrupt_payload,
+    read_and_validate_pdf,
+)
 from skillgap_ai import graph
 
 
@@ -48,63 +51,6 @@ class JobSelectionRequest(BaseModel):
 
 
 # ==========================================
-# Helpers
-# ==========================================
-
-def extract_pdf_text(file_bytes: bytes) -> str:
-    """
-    Extract text from a PDF uploaded by the user.
-    """
-
-    try:
-        reader = PdfReader(
-            io.BytesIO(file_bytes)
-        )
-
-        pages = []
-
-        for page in reader.pages:
-            text = page.extract_text()
-
-            if text:
-                pages.append(text)
-
-        return "\n".join(pages).strip()
-
-    except Exception as error:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Could not read the PDF file: "
-                f"{type(error).__name__}"
-            ),
-        )
-
-
-def get_interrupt_payload(result: dict):
-    """
-    Extract the Human-in-the-Loop payload returned
-    by LangGraph interrupt().
-    """
-
-    interrupts = result.get(
-        "__interrupt__",
-        [],
-    )
-
-    if not interrupts:
-        return None
-
-    current_interrupt = interrupts[0]
-
-    return getattr(
-        current_interrupt,
-        "value",
-        current_interrupt,
-    )
-
-
-# ==========================================
 # Health Check
 # ==========================================
 
@@ -139,41 +85,9 @@ async def start_analysis(
     and returns jobs to the frontend.
     """
 
-    # --------------------------------------
-    # Validate file
-    # --------------------------------------
-
-    filename = (
-        cv.filename or ""
-    ).lower()
-
-    if not filename.endswith(".pdf"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Only PDF CV files are supported "
-                "in the current demo."
-            ),
-        )
-
-    file_bytes = await cv.read()
-
-    if not file_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded CV is empty.",
-        )
-
-    # 10 MB limit
-    if len(file_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=400,
-            detail="CV file exceeds 10 MB.",
-        )
-
-    # --------------------------------------
-    # PDF → text
-    # --------------------------------------
+    file_bytes = await read_and_validate_pdf(
+        cv
+    )
 
     cv_text = extract_pdf_text(
         file_bytes
@@ -187,10 +101,6 @@ async def start_analysis(
                 "inside the PDF."
             ),
         )
-
-    # --------------------------------------
-    # Create LangGraph thread
-    # --------------------------------------
 
     thread_id = str(
         uuid.uuid4()
@@ -209,10 +119,6 @@ async def start_analysis(
         "execution_logs": [],
     }
 
-    # --------------------------------------
-    # Run graph until interrupt
-    # --------------------------------------
-
     try:
         result = graph.invoke(
             initial_state,
@@ -226,21 +132,13 @@ async def start_analysis(
                 "SkillGap workflow failed: "
                 f"{type(error).__name__}"
             ),
-        )
-
-    # --------------------------------------
-    # Controlled failure
-    # --------------------------------------
+        ) from error
 
     if result.get("error_message"):
         raise HTTPException(
             status_code=400,
             detail=result["error_message"],
         )
-
-    # --------------------------------------
-    # Human-in-the-Loop
-    # --------------------------------------
 
     interrupt_payload = (
         get_interrupt_payload(result)
@@ -273,7 +171,6 @@ async def start_analysis(
                 ),
         }
 
-    # Unexpected: workflow ended immediately
     if result.get("final_report"):
         return {
             "status": "completed",
@@ -329,11 +226,7 @@ def select_job(
                 "Could not resume SkillGap workflow: "
                 f"{type(error).__name__}"
             ),
-        )
-
-    # --------------------------------------
-    # Invalid selection may interrupt again
-    # --------------------------------------
+        ) from error
 
     interrupt_payload = (
         get_interrupt_payload(result)
@@ -369,19 +262,11 @@ def select_job(
                 ),
         }
 
-    # --------------------------------------
-    # Controlled failure
-    # --------------------------------------
-
     if result.get("error_message"):
         raise HTTPException(
             status_code=400,
             detail=result["error_message"],
         )
-
-    # --------------------------------------
-    # Final response for frontend
-    # --------------------------------------
 
     return {
         "status": "completed",
