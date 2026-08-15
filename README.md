@@ -2,7 +2,7 @@
 
 **SkillGap AI** is a multi-agent career analysis system that compares a candidate's CV with real job opportunities, identifies verified skill gaps, and generates a practical development plan.
 
-The system uses **LangGraph** to orchestrate multiple specialized agents, **OpenRouter** for LLM access, **Tavily** for live job discovery, and **FastAPI** to expose the workflow through a simple web interface.
+The system uses **LangGraph** to orchestrate multiple specialized agents, **OpenRouter** for LLM access, **Tavily** for live job discovery, and **FastAPI** to expose the workflow through a lightweight web interface.
 
 ---
 
@@ -21,6 +21,7 @@ The user uploads a PDF CV, enters a target role and location, reviews real job o
 ## Key Features
 
 - PDF CV upload and text extraction
+- Multi-layer PDF validation
 - Structured candidate profile analysis
 - Live job search using Tavily
 - Parallel execution of profile analysis and job discovery
@@ -35,7 +36,9 @@ The user uploads a PDF CV, enters a target role and location, reviews real job o
 - Supervisor-based validation and retry logic
 - Controlled failure handling
 - LangGraph checkpointing for interrupted/resumed workflows
+- Input validation and bounded user inputs
 - FastAPI backend with a lightweight web frontend
+- Automated tests for validation and workflow routing
 
 ---
 
@@ -101,7 +104,7 @@ After input validation, the workflow fans out into two independent branches:
 - **Profile Analyzer** analyzes the CV.
 - **Job Scout** searches for relevant job opportunities.
 
-LangGraph then waits for both branches to become ready before continuing to the Human-in-the-Loop job selection step.
+LangGraph waits for both branches to become ready before continuing to the Human-in-the-Loop job selection step.
 
 ---
 
@@ -160,6 +163,11 @@ This keeps the final recommendations grounded in data extracted from the CV and 
 - CSS
 - JavaScript
 
+### Testing
+
+- Pytest
+- Pytest Asyncio
+
 ---
 
 ## Project Structure
@@ -175,16 +183,51 @@ SkillGap-AI/
 │   ├── requirements_agent.py
 │   └── supervisor.py
 │
+├── workflow/
+│   ├── __init__.py
+│   ├── analysis_nodes.py
+│   ├── graph.py
+│   ├── input_nodes.py
+│   ├── job_nodes.py
+│   ├── output_nodes.py
+│   ├── runtime.py
+│   ├── state.py
+│   └── supervision_nodes.py
+│
 ├── frontend/
-│   └── index.html
+│   ├── index.html
+│   ├── styles.css
+│   ├── renderers.js
+│   └── app.js
+│
+├── tests/
+│   ├── test_api_helpers.py
+│   ├── test_input_guard.py
+│   ├── test_job_validation.py
+│   └── test_routing.py
 │
 ├── .env.example
 ├── .gitignore
 ├── api.py
+├── api_helpers.py
+├── cli.py
 ├── requirements.txt
 ├── skillgap_ai.py
 └── README.md
 ```
+
+### Code Organization
+
+The project separates responsibilities across several layers:
+
+- `agents/` contains the specialized AI and deterministic analysis components.
+- `workflow/` contains LangGraph state, nodes, routing, supervision, and graph construction.
+- `frontend/` contains the web interface, styles, rendering logic, and client-side application logic.
+- `tests/` contains automated tests for input validation, PDF handling, job validation, and workflow routing.
+- `api.py` exposes the application through FastAPI.
+- `api_helpers.py` handles PDF validation, text extraction, and API helper logic.
+- `skillgap_ai.py` provides the main workflow entry point.
+- `cli.py` provides command-line execution of the workflow.
 
 ---
 
@@ -198,7 +241,7 @@ OPENROUTER_MODEL=your_openrouter_model
 TAVILY_API_KEY=your_tavily_api_key
 ```
 
-You can copy the provided example file:
+You can copy the provided example file.
 
 ### macOS / Linux
 
@@ -213,6 +256,8 @@ Copy-Item .env.example .env
 ```
 
 Then add your API keys and preferred OpenRouter model.
+
+> `.env` is excluded from version control. Never commit API keys or other secrets to the repository.
 
 ---
 
@@ -248,12 +293,12 @@ source .venv/bin/activate
 ### 3. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ### 4. Configure environment variables
 
-Create `.env` from `.env.example` and fill in:
+Create `.env` from `.env.example` and configure:
 
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_MODEL`
@@ -281,6 +326,39 @@ FastAPI interactive documentation is available at:
 http://127.0.0.1:8000/docs
 ```
 
+The health endpoint is available at:
+
+```text
+http://127.0.0.1:8000/api/health
+```
+
+---
+
+## Running the Tests
+
+Run the full automated test suite from the project root:
+
+```bash
+python -m pytest -v
+```
+
+The test suite covers:
+
+- input validation
+- CV length validation
+- target role and location validation
+- PDF extension and content-type validation
+- PDF size and parsing validation
+- job URL validation
+- job relevance filtering
+- closed-job detection
+- duplicate job filtering
+- workflow routing
+- retry-limit routing
+- Supervisor routing
+
+The current test suite contains **52 passing tests**.
+
 ---
 
 ## API Endpoints
@@ -305,7 +383,7 @@ Form fields:
 - `target_role` — desired role
 - `location` — desired job location
 
-The endpoint runs the first workflow stage and normally returns:
+The endpoint validates the uploaded CV, extracts its text, starts the LangGraph workflow, and normally returns:
 
 - a `thread_id`
 - discovered jobs
@@ -323,11 +401,48 @@ JSON body:
 ```json
 {
   "thread_id": "your-thread-id",
-  "selected_job_index": 0
+  "selected_job_index": 1
 }
 ```
 
 This resumes the interrupted LangGraph workflow and runs the remaining analysis.
+
+---
+
+## Input and File Validation
+
+The application validates user input before expensive AI or search operations are executed.
+
+### CV Validation
+
+Uploaded CVs are checked for:
+
+- `.pdf` file extension
+- recognized PDF content type
+- non-empty file content
+- maximum file size of **10 MB**
+- successful parsing by PyPDF
+- extractable text content
+
+The extracted CV text is also bounded before entering the workflow.
+
+### User Input Validation
+
+The Input Guard validates:
+
+- CV text presence and length
+- target role presence and maximum length
+- location presence and maximum length
+
+Invalid input is routed to a controlled failure path instead of continuing through the multi-agent workflow.
+
+---
+
+## Frontend Safety
+
+Dynamic data returned by job search and AI components is rendered using DOM APIs such as `textContent` and `createTextNode` rather than injecting external content through `innerHTML`.
+
+This reduces the risk of rendering untrusted job or model output as executable HTML.
 
 ---
 
@@ -354,33 +469,40 @@ The completed analysis includes information such as:
 
 ## Validation and Reliability
 
-SkillGap AI includes several safeguards to reduce unsupported outputs:
+SkillGap AI includes several safeguards to reduce unsupported or unreliable outputs:
 
 - structured Pydantic outputs for LLM agents
 - deterministic validation of important fields
 - explicit skill evidence extraction
 - deterministic skill matching and coverage calculation
 - job-result validation
+- bounded user input
+- multi-layer PDF validation
 - limited retry counters
 - Supervisor review stages
 - controlled failure paths when outputs cannot be validated
+- Human-in-the-Loop job selection
+- automated tests for critical validation and routing logic
 - no automatic invention of job location when the search result does not provide one reliably
 
 ---
 
 ## Current Limitations
 
-- The current demo accepts **PDF CV files only**.
+- The current version accepts **PDF CV files only**.
 - Scanned PDFs without extractable text may not work because the application does not currently perform OCR.
-- Job quality depends on the search results returned by Tavily.
+- Job quality and availability depend on search results returned by Tavily.
 - LLM output quality depends on the OpenRouter model configured in `.env`.
 - The current checkpoint store uses LangGraph's in-memory saver, so workflow state is not intended as persistent production storage.
+- The current application does not provide user accounts or persistent analysis history.
 
 ---
 
 ## Requirements
 
-The main Python dependencies are listed in `requirements.txt`:
+The project uses pinned dependency versions in `requirements.txt` to keep local and deployment environments reproducible.
+
+Main dependencies include:
 
 ```text
 langchain-core
@@ -394,6 +516,8 @@ fastapi
 uvicorn
 python-multipart
 pypdf
+pytest
+pytest-asyncio
 ```
 
 ---
@@ -408,11 +532,6 @@ Possible next steps include:
 - support for DOCX CVs
 - OCR support for scanned CVs
 - improved job-source filtering
-- automated tests for graph routes and agent validation
-- deployment configuration for production environments
+- persistent result storage
+- production monitoring and observability
 
----
-
-## License
-
-Add the appropriate project license here if the repository will be distributed publicly.

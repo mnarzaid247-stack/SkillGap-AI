@@ -6,7 +6,11 @@ from workflow.runtime import (
     create_career_coach_agent,
     create_llm,
 )
-from workflow.state import MAX_PROFILE_RETRIES, MAX_REQUIREMENTS_RETRIES, SkillGapState
+from workflow.state import (
+    MAX_PROFILE_RETRIES,
+    MAX_REQUIREMENTS_RETRIES,
+    SkillGapState,
+)
 
 
 def requirements_node(
@@ -16,13 +20,14 @@ def requirements_node(
     _live_log("[START] Requirements Agent")
 
     result = requirements_agent(
-    state,
-    create_llm(),
-)
+        state,
+        create_llm(),
+    )
 
     if result.get("requirements_error"):
         _live_log(
-            f"[ERROR] Requirements Agent — {result.get('requirements_error')}"
+            f"[ERROR] Requirements Agent — "
+            f"{result.get('requirements_error')}"
         )
     else:
         _live_log("[DONE] Requirements Agent")
@@ -64,7 +69,8 @@ def gap_analyzer_node(
     _live_log("[START] Gap Analyzer")
 
     result = gap_analyzer(
-        state
+        state,
+        create_llm(),
     )
 
     coverage = (
@@ -90,11 +96,15 @@ def gap_analyzer_node(
 
     if result.get("gap_error"):
         _live_log(
-            f"[ERROR] Gap Analyzer — {result.get('gap_error')}"
+            f"[ERROR] Gap Analyzer — "
+            f"{result.get('gap_error')}"
         )
     else:
         _live_log(
-            f"[DONE] Gap Analyzer — Skill Coverage = {coverage}%"
+            (
+                "[DONE] Gap Analyzer — "
+                f"Skill Coverage = {coverage}%"
+            )
             if coverage is not None
             else "[DONE] Gap Analyzer"
         )
@@ -112,9 +122,10 @@ def route_gap_analysis(
     state: SkillGapState,
 ) -> str:
     """
-    Deterministic quality routing.
+    Route Gap Analyzer results deterministically.
 
-    This is intentionally NOT an LLM decision.
+    Semantic skill matching is performed by the Gap Analyzer LLM,
+    while routing and retry decisions remain deterministic.
     """
 
     error = state.get(
@@ -162,15 +173,16 @@ def career_coach_node(
     _live_log("[START] Career Coach")
 
     result = (
-    create_career_coach_agent()
-    .generate_recommendations(
-        state
+        create_career_coach_agent()
+        .generate_recommendations(
+            state
+        )
     )
-)
 
     if result.get("career_coach_error"):
         _live_log(
-            f"[ERROR] Career Coach — {result.get('career_coach_error')}"
+            f"[ERROR] Career Coach — "
+            f"{result.get('career_coach_error')}"
         )
     else:
         _live_log("[DONE] Career Coach")
