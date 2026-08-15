@@ -315,23 +315,30 @@ class SupervisorAgent:
             allowed_retry = "retry_profile"
 
             criteria = """
-Check whether the candidate profile is usable.
+Check whether the candidate profile is usable for the next workflow step.
 
 Review:
-- Skills were extracted when clearly present.
+- Skills were extracted when clearly present in the CV.
 - Projects were captured when present.
 - Experience was captured when present.
 - Education was captured when present.
 - Skill evidence must be grounded in the CV.
+- Skill evidence may come from experience, projects, education,
+  certifications, or other explicit CV content.
+- It is acceptable for multiple skills to share the same evidence
+  when the same CV statement genuinely supports those skills.
 - It is acceptable for some listed skills to have no evidence.
 - Do NOT require evidence for every listed skill.
 - experience_level may be "Unknown" when the CV does not support
   a reliable classification.
 - Do NOT request a retry only because experience_level is "Unknown".
-- Future-dated roles may be preserved if they are explicitly stated
-  in the CV, but they must not be misrepresented as completed experience.
-- The result is not empty or obviously incomplete.
-- Unsupported candidate facts were not invented.
+- Preserve dates and experience exactly as stated in the CV.
+- Do NOT infer whether a role is past, current, or future unless
+  that status is explicitly stated in the CV.
+- The result must not be empty or obviously incomplete.
+- Unsupported candidate facts must not be invented.
+- Approve when the profile is sufficiently grounded and usable,
+  even if minor evidence choices could be improved.
 """
 
         elif review_stage == "requirements":

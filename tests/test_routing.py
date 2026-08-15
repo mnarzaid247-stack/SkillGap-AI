@@ -5,8 +5,11 @@ from workflow.analysis_nodes import (
 from workflow.input_nodes import (
     route_input_guard,
 )
-from workflow.job_nodes import (
+from workflow.job_selection_nodes import (
     route_human_selection,
+)
+
+from workflow.job_search_nodes import (
     route_job_validation,
 )
 from workflow.state import (

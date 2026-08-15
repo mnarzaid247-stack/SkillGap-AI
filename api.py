@@ -93,14 +93,16 @@ async def start_analysis(
         file_bytes
     )
 
-    if not cv_text:
+    if len(cv_text.strip()) < 100:
         raise HTTPException(
             status_code=400,
             detail=(
-                "No readable text was found "
-                "inside the PDF."
-            ),
-        )
+            "تعذر قراءة السيرة الذاتية. "
+            "يبدو أن ملف PDF لا يحتوي على نص كافٍ قابل للقراءة، "
+            "وقد يكون عبارة عن صور أو مسح ضوئي. "
+            "يرجى رفع ملف PDF يحتوي على نص قابل للتحديد والنسخ."
+        ),
+    )
 
     thread_id = str(
         uuid.uuid4()

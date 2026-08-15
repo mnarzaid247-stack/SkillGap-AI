@@ -1,4 +1,4 @@
-from workflow.job_nodes import (
+from workflow.job_search_nodes import (
     _job_is_explicitly_closed,
     _job_looks_relevant,
     _valid_job_url,

@@ -15,16 +15,19 @@ from workflow.input_nodes import (
     profile_ready_node,
     route_input_guard,
 )
-from workflow.job_nodes import (
-    human_job_selection_node,
+from workflow.job_search_nodes import (
     job_scout_node,
     job_validation_node,
     jobs_branch_done_node,
     jobs_ready_node,
     limited_jobs_ready_node,
     refine_search_node,
-    route_human_selection,
     route_job_validation,
+)
+
+from workflow.job_selection_nodes import (
+    human_job_selection_node,
+    route_human_selection,
     selected_job_enrichment_node,
 )
 from workflow.output_nodes import controlled_failure_node, final_report_node
