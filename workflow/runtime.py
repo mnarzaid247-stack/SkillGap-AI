@@ -37,9 +37,12 @@ def create_llm() -> ChatOpenAI:
     )
 
 
-llm = create_llm()
-career_coach_agent = CareerCoachAgent()
-supervisor_agent = SupervisorAgent()
+def create_career_coach_agent() -> CareerCoachAgent:
+    return CareerCoachAgent()
+
+
+def create_supervisor_agent() -> SupervisorAgent:
+    return SupervisorAgent()
 
 
 def _live_log(message: str) -> None:

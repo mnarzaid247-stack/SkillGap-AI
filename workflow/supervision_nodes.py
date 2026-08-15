@@ -1,4 +1,7 @@
-from workflow.runtime import _live_log, supervisor_agent
+from workflow.runtime import (
+    _live_log,
+    create_supervisor_agent,
+)
 from workflow.state import (
     MAX_COACH_RETRIES,
     MAX_PROFILE_RETRIES,
@@ -19,10 +22,11 @@ def supervisor_node(
     _live_log(f"[START] Supervisor [{stage}]")
 
     result = (
-        supervisor_agent.review(
-            state
-        )
+    create_supervisor_agent()
+    .review(
+        state
     )
+)
 
     decision = result.get(
         "supervisor_decision",

@@ -1,7 +1,11 @@
 from agents.gap_analyzer import gap_analyzer
 from agents.requirements_agent import requirements_agent
 
-from workflow.runtime import _live_log, career_coach_agent, llm
+from workflow.runtime import (
+    _live_log,
+    create_career_coach_agent,
+    create_llm,
+)
 from workflow.state import MAX_PROFILE_RETRIES, MAX_REQUIREMENTS_RETRIES, SkillGapState
 
 
@@ -12,9 +16,9 @@ def requirements_node(
     _live_log("[START] Requirements Agent")
 
     result = requirements_agent(
-        state,
-        llm,
-    )
+    state,
+    create_llm(),
+)
 
     if result.get("requirements_error"):
         _live_log(
@@ -158,11 +162,11 @@ def career_coach_node(
     _live_log("[START] Career Coach")
 
     result = (
-        career_coach_agent
-        .generate_recommendations(
-            state
-        )
+    create_career_coach_agent()
+    .generate_recommendations(
+        state
     )
+)
 
     if result.get("career_coach_error"):
         _live_log(
