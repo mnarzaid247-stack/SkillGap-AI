@@ -46,7 +46,7 @@ The user uploads a PDF CV, enters a target role and location, reviews real job o
 
 The application is deployed on Render and can be accessed here:
 
-[SkillGap AI - Live Demo]https://skillgap-ai-a336.onrender.com
+[SkillGap AI - Live Demo] (https://skillgap-ai-a336.onrender.com)
 
 ---
 
