@@ -535,3 +535,16 @@ Possible next steps include:
 - persistent result storage
 - production monitoring and observability
 
+
+---
+
+## SDAIAAcademy details
+
+This project was developed as part of the **Advanced Agentic AI Systems Engineering** training program by **SDAIA Academy**.
+
+The project applies concepts covered during the program, including multi-agent systems, agent orchestration, Human-in-the-Loop workflows, structured LLM outputs, validation, and supervisor-based agent coordination.
+
+### SDAIA Academy
+
+GitHub: https://github.com/SDAIAAcademy
+
