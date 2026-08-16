@@ -42,6 +42,14 @@ The user uploads a PDF CV, enters a target role and location, reviews real job o
 
 ---
 
+## Live Demo
+
+The application is deployed on Render and can be accessed here:
+
+[SkillGap AI - Live Demo]https://skillgap-ai-a336.onrender.com
+
+---
+
 ## Multi-Agent Architecture
 
 The system is composed of specialized agents, each responsible for a specific stage of the workflow.
@@ -266,7 +274,7 @@ Then add your API keys and preferred OpenRouter model.
 ### 1. Clone the repository
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
+git clone https://github.com/mnarzaid247-stack/SkillGap-AI.git
 cd SkillGap-AI
 ```
 
